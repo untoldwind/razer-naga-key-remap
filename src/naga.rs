@@ -1,11 +1,14 @@
-use evdev_rs::{BLOCKING, Device, GrabMode, InputEvent, NORMAL, ReadStatus};
-use std::fs::{File, read_dir};
+use evdev_rs::{Device, DeviceWrapper, GrabMode, InputEvent, ReadFlag, ReadStatus};
+use std::fs::{read_dir, File};
 
 pub struct Naga {
     device: Device,
-    // need to keep this file, otherwise file would be closed too early
-    _file: File,
 }
+
+const DEVICE_NAMES: &[(&str, &str)] = &[
+    ("Razer Razer Naga 2014", "/input2"),
+    ("Razer Razer Naga Trinity", "/input2"),
+];
 
 impl Naga {
     pub fn new() -> Result<Naga, String> {
@@ -15,23 +18,34 @@ impl Naga {
         for path_result in paths {
             let path = match path_result {
                 Ok(p) => p,
-                Err(_) => { continue; }
+                Err(_) => {
+                    continue;
+                }
             };
 
             let file = match File::open(path.path()) {
                 Ok(f) => f,
-                Err(_) => { continue; }
+                Err(_) => {
+                    continue;
+                }
             };
 
-            let mut device = match Device::new_from_fd(&file) {
+            let mut device = match Device::new_from_file(file) {
                 Ok(d) => d,
-                Err(_) => { continue; }
+                Err(_) => {
+                    continue;
+                }
             };
 
-            if device.name().unwrap_or("").eq("Razer Razer Naga 2014")
-                && device.phys().unwrap_or("").ends_with("/input2") {
-                device.grab(GrabMode::Grab).map_err(|e| format!("Could not grab device: {}", e))?;
-                return Ok(Naga { device, _file: file });
+            for (name, phys) in DEVICE_NAMES {
+                if device.name().unwrap_or("").eq(*name)
+                    && device.phys().unwrap_or("").ends_with(*phys)
+                {
+                    device
+                        .grab(GrabMode::Grab)
+                        .map_err(|e| format!("Could not grab device: {}", e))?;
+                    return Ok(Naga { device });
+                }
             }
         }
 
@@ -39,9 +53,12 @@ impl Naga {
     }
 
     pub fn next_event(&self) -> Result<(ReadStatus, InputEvent), String> {
-        match self.device.next_event(NORMAL | BLOCKING) {
+        match self
+            .device
+            .next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING)
+        {
             Ok(res) => Ok(res),
-            Err(errno) => Err(format!("Problem reading event: {}", errno))
+            Err(errno) => Err(format!("Problem reading event: {}", errno)),
         }
     }
 }

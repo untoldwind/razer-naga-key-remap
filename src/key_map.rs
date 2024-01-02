@@ -1,36 +1,50 @@
 use evdev_rs::enums::EV_KEY;
 use evdev_rs::enums::EV_KEY::*;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use toml;
 use uinput::event::keyboard::Key;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct KeyMapper {
-    keys: [Key; 12]
+    keys: [Vec<Key>; 12],
 }
 
 #[derive(Deserialize)]
 struct Config {
-    keys: HashMap<String, String>,
+    keys: HashMap<String, Vec<String>>,
 }
 
 impl KeyMapper {
     pub fn default() -> KeyMapper {
         KeyMapper {
-            keys: [Key::_1, Key::_2, Key::_3, Key::_4, Key::_5, Key::_6, Key::_7, Key::_8, Key::_9, Key::_0, Key::Minus, Key::Equal]
+            keys: [
+                vec![Key::_1],
+                vec![Key::_2],
+                vec![Key::_3],
+                vec![Key::_4],
+                vec![Key::_5],
+                vec![Key::_6],
+                vec![Key::_7],
+                vec![Key::_8],
+                vec![Key::_9],
+                vec![Key::_0],
+                vec![Key::Minus],
+                vec![Key::Equal],
+            ],
         }
     }
 
     pub fn read_from_file(path: &str) -> Result<KeyMapper, String> {
         let contents = read_file_contents(path)?;
-        let config: Config = toml::from_str(contents.as_str())
-            .map_err(|e| format!("{}", e))?;
+        let config: Config = toml::from_str(contents.as_str()).map_err(|e| format!("{}", e))?;
 
         let mut key_mapper = KeyMapper::default();
 
-        for (k, v) in config.keys {
-            let key_num = k.parse::<usize>()
+        for (k, values) in config.keys {
+            let key_num = k
+                .parse::<usize>()
                 .map(|i| i - 1)
                 .map_err(|e| format!("{}", e))?;
 
@@ -38,24 +52,22 @@ impl KeyMapper {
                 return Err(format!("Invalid key number: {}", key_num));
             }
 
-            let key = get_key_enum(v)?;
-
-            key_mapper.keys[key_num] = key;
+            key_mapper.keys[key_num] = values
+                .into_iter()
+                .map(|v| get_key_enum(v))
+                .collect::<Result<Vec<Key>, String>>()?;
         }
 
         Ok(key_mapper)
     }
 
-    pub fn map_key(self, key: EV_KEY) -> Option<Key> {
-        return key_index(key)
-            .and_then(|i| self.keys.get(i))
-            .map(|k| *k);
+    pub fn map_key(&self, key: EV_KEY) -> Option<&Vec<Key>> {
+        key_index(key).and_then(|i| self.keys.get(i))
     }
 }
 
 fn read_file_contents(path: &str) -> Result<String, String> {
-    let contents = fs::read_to_string(path)
-        .map_err(|e| format!("{}", e))?;
+    let contents = fs::read_to_string(path).map_err(|e| format!("{}", e))?;
 
     return Ok(contents);
 }
@@ -74,7 +86,7 @@ fn key_index(key: EV_KEY) -> Option<usize> {
         KEY_0 => Some(9),
         KEY_MINUS => Some(10),
         KEY_EQUAL => Some(11),
-        _ => None
+        _ => None,
     }
 }
 
